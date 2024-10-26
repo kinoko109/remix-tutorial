@@ -1,25 +1,47 @@
 import {
-  Form, Link,
+  Form,
   Links,
-  Meta, Outlet,
+  Meta,
+  NavLink,
+  Outlet,
   Scripts,
-  ScrollRestoration, useLoaderData,
+  ScrollRestoration,
+  useLoaderData,
+  useNavigation, useSubmit,
 } from "@remix-run/react";
 import appStylesHref from "./app.css?url";
-import { json, LinksFunction } from "@remix-run/node";
-import { getContacts } from "~/data";
+import { json, LinksFunction, LoaderFunctionArgs, redirect } from "@remix-run/node";
+import { createEmptyContact, getContacts } from "~/data";
+import { useEffect } from "react";
 
 export const links: LinksFunction = () => [
   { rel: "stylesheet", href: appStylesHref },
 ];
 
-export const loader = async () => {
-  const contacts = await getContacts();
-  return json({ contacts })
+export const loader = async ({ request }: LoaderFunctionArgs) => {
+  const url = new URL(request.url);
+  const q = url.searchParams.get("q");
+  const contacts = await getContacts(q);
+  return json({ contacts, q })
+}
+
+export const action = async() => {
+  const contact = await createEmptyContact()
+  return redirect(`/contacts/${contact.id}/edit`);
 }
 
 export default function App() {
-  const { contacts } = useLoaderData<typeof loader>()
+  const { contacts, q } = useLoaderData<typeof loader>()
+  const navigation = useNavigation();
+  const submit = useSubmit()
+  const searching = navigation.location && new URLSearchParams(navigation.location.search).has("q")
+
+  useEffect(() => {
+    const searchField = document.getElementById("q")
+    if(searchField instanceof HTMLInputElement) {
+      searchField.value = q || "";
+    }
+  }, [q])
 
   return (
       <html lang="en">
@@ -33,15 +55,22 @@ export default function App() {
       <div id="sidebar">
         <h1>Remix Contacts</h1>
         <div>
-          <Form id="search-form" role="search">
+          <Form id="search-form" role="search" onChange={(event) => {
+            const isFirstSearch = q === null;
+            submit(event.currentTarget, {
+              replace: !isFirstSearch
+            })
+          }}>
             <input
                 id="q"
                 aria-label="Search contacts"
                 placeholder="Search"
                 type="search"
                 name="q"
+                defaultValue={q || ""}
+                className={searching ? "loading" : ""}
             />
-            <div id="search-spinner" aria-hidden hidden={true}/>
+            <div id="search-spinner" aria-hidden hidden={!searching}/>
           </Form>
           <Form method="post">
             <button type="submit">New</button>
@@ -52,7 +81,7 @@ export default function App() {
               <ul>
                 {contacts.map((contact) => (
                     <li key={contact.id}>
-                      <Link to={`contacts/${contact.id}`}>
+                      <NavLink to={`contacts/${contact.id}`}>
                         {contact.first || contact.last ? (
                             <>
                               {contact.first} {contact.last}
@@ -63,7 +92,7 @@ export default function App() {
                         {contact.favorite ? (
                             <span>★</span>
                         ) : null}
-                      </Link>
+                      </NavLink>
                     </li>
                 ))}
               </ul>
@@ -74,7 +103,7 @@ export default function App() {
           )}
         </nav>
       </div>
-      <div id="details">
+      <div className={navigation.state === "loading" ? "loading" : ""} id="details">
         <Outlet/>
       </div>
 
